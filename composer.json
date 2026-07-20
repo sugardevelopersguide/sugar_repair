@@ -6,8 +6,8 @@
     "homepage": "https://github.com/sugardevelopersguide/sugar_repair",
     "authors": [
         {
-            "name": "Jeff Bickart",
-            "homepage": "https://amaiza.com"
+            "name": "Sugar Developers Guide",
+            "homepage": "https://sugardevelopersguide.substack.com/"
         }
     ],
     "require": {
