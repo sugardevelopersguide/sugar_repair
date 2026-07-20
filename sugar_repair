@@ -138,8 +138,6 @@ function repair($rebuild_cache)
 
     if ($rebuild_cache) {
         rebuild_autoloader_cache();
-        \LanguageManager::removeJSLanguageFiles();
-        \LanguageManager::clearLanguageCache();
         echo "Executing basic instance warm-up...\n";
         warm_up();
     }
