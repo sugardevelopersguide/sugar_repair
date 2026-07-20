@@ -2,8 +2,22 @@
 
 CLI Quick Repair and Rebuild for SugarCRM, without going through the web UI or a working `bin/sugarcrm` console (useful when the console itself is what's broken).
 
+## Install
+
 ```
-./sugar_repair [--cache] <path to sugar>
+composer global require amaiza/sugar_repair
+```
+
+Or as a dev dependency of a Sugar codebase:
+
+```
+composer require --dev amaiza/sugar_repair
+```
+
+Either way you get a `sugar_repair` executable on your Composer bin path; run it against any Sugar installation:
+
+```
+sugar_repair [--cache] <path to sugar>
 ```
 
 - No flags: runs `RepairAndClear::repairAndClearAll()` for all modules (database repair, extensions, tpls, js, theme cache, etc.) — equivalent to the admin panel's "Quick Repair and Rebuild".
