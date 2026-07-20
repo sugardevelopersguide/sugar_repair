@@ -3,7 +3,7 @@
     "description": "CLI Quick Repair and Rebuild for SugarCRM, without going through the web UI or a working bin/sugarcrm console.",
     "type": "library",
     "license": "MIT",
-    "homepage": "https://github.com/bickart/sugar_repair",
+    "homepage": "https://github.com/sugardevelopersguide/sugar_repair",
     "authors": [
         {
             "name": "Jeff Bickart",
