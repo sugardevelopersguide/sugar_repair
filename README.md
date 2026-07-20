@@ -5,13 +5,13 @@ CLI Quick Repair and Rebuild for SugarCRM, without going through the web UI or a
 ## Install
 
 ```
-composer global require amaiza/sugar_repair
+composer global require sugardevelopersguide/sugar_repair
 ```
 
 Or as a dev dependency of a Sugar codebase:
 
 ```
-composer require --dev amaiza/sugar_repair
+composer require --dev sugardevelopersguide/sugar_repair
 ```
 
 Either way you get a `sugar_repair` executable on your Composer bin path; run it against any Sugar installation:

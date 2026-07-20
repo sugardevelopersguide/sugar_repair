@@ -1,5 +1,5 @@
 {
-    "name": "amaiza/sugar_repair",
+    "name": "sugardevelopersguide/sugar_repair",
     "description": "CLI Quick Repair and Rebuild for SugarCRM, without going through the web UI or a working bin/sugarcrm console.",
     "type": "library",
     "license": "MIT",
