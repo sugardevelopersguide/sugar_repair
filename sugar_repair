@@ -1,80 +1,177 @@
 #! /usr/bin/env php
 <?php
 
-# Stuff we have to do
-if(!defined('sugarEntry'))define('sugarEntry', true); 
+use Psr\SimpleCache\CacheInterface;
+use Sugarcrm\Sugarcrm\AccessControl\AdminWork;
+use Sugarcrm\Sugarcrm\DependencyInjection\Container;
+use Sugarcrm\Sugarcrm\Security\Context;
+use Sugarcrm\Sugarcrm\Security\Subject\Cli;
 
-function usage() {
+// Stuff we have to do
+if (!defined('sugarEntry')) {
+    define('sugarEntry', true);
+}
+
+function usage()
+{
     global $argv;
-    return "\n" . $argv[0] . " <path to sugar>\n";
+    return "\n".$argv[0]." [--cache] <path to sugar>\n";
 }
 
-function check_cli_options() {
-    global $argc;
-    if ($argc != 2) {
-        die(usage());
+function parse_cli_options()
+{
+    global $argv, $argc;
+    $rebuild_cache = false;
+    $dir_path = null;
+
+    for ($i = 1; $i < $argc; $i++) {
+        if ($argv[$i] === '--cache') {
+            $rebuild_cache = true;
+        } elseif ($dir_path === null) {
+            $dir_path = $argv[$i];
+        } else {
+            exit(usage());
+        }
     }
+
+    if ($dir_path === null) {
+        exit(usage());
+    }
+
+    return [$dir_path, $rebuild_cache];
 }
 
-# Put us in the right directory
-function change_to_sugar_directory($dir_path) {
+// Put us in the right directory
+function change_to_sugar_directory($dir_path)
+{
     if (file_exists($dir_path)) {
-        set_include_path(get_include_path() . PATH_SEPARATOR . $dir_path);
+        set_include_path(get_include_path().PATH_SEPARATOR.$dir_path);
         chdir($dir_path);
         if (file_exists('include/entryPoint.php')) {
-            echo("Repairing: " . $dir_path . "\n"); 
+            echo 'Repairing: '.$dir_path."\n";
         } else {
-            die("Cannot find " . $dir_path . "/include/entryPoint.php\n");
+            exit('Cannot find '.$dir_path."/include/entryPoint.php\n");
         }
     } else {
-        die("Directory not found: " . $dir_path . "\n");
+        exit('Directory not found: '.$dir_path."\n");
     }
 }
- 
-function setup_environment() {
-    global $sugar_config;
-    # Setup the language
-    if(empty($current_language)) {
+
+function setup_environment()
+{
+    global $sugar_config, $current_language, $app_list_strings, $current_user;
+
+    // Setup the language (entryPoint.php already loads $app_strings via
+    // SugarApplication::preLoadLanguages(), but not $app_list_strings)
+    if (empty($current_language)) {
         $current_language = $sugar_config['default_language'];
     }
     $app_list_strings = return_app_list_strings_language($current_language);
-    $app_strings      = return_application_language($current_language);
-    
-    # Setup the current user
-    global $current_user;
-    $current_user = new User();
+
+    // Promote the CLI process to the system admin user and grant it admin
+    // ACL rights and a CLI security subject, same as bin/sugarcrm does for
+    // every console command (including admin:qrr)
     $current_user->getSystemUser();
-}
- 
-function repair() {
-    $repair = new RepairAndClear();
-    $repair->repairAndClearAll(array('clearAll'),array(translate('LBL_ALL_MODULES')), true,false);
-    //remove the js language files
-    LanguageManager::removeJSLanguageFiles();
-    //remove language cache files
-    LanguageManager::clearLanguageCache();    
+
+    $adminWork = new AdminWork();
+    $adminWork->startAdminWork();
+
+    $context = Container::getInstance()->get(Context::class);
+    $subject = new Cli();
+    $context->activateSubject($subject);
+
+    return [$context, $subject];
 }
 
-function teardown_environment() {
+function rebuild_autoloader_cache()
+{
+    \SugarAutoLoader::buildCache();
+}
+
+function clear_cache()
+{
+    Container::getInstance()->get(CacheInterface::class)->clear();
+}
+
+// Quick load of every bean/module language file and the API dictionaries,
+// so the first real request after a repair isn't the one paying for it
+function warm_up()
+{
+    global $beanList, $app_list_strings, $current_language;
+
+    $full_module_list = array_merge($beanList, $app_list_strings['moduleList']);
+    foreach ($full_module_list as $module => $label) {
+        \BeanFactory::newBean($module);
+        \LanguageManager::createLanguageFile($module, ['default'], true);
+        return_module_language($current_language, $module);
+    }
+
+    $app_list_strings = return_app_list_strings_language($current_language);
+    return_application_language($current_language);
+
+    new \ServiceDictionary()->buildAllDictionaries();
+}
+
+function repair($rebuild_cache)
+{
+    if ($rebuild_cache) {
+        echo "Clearing cache...\n";
+        clear_cache();
+        rebuild_autoloader_cache();
+    }
+
+    // LBL_ALL_MODULES has to be resolved against the Administration module's
+    // own strings (as admin:qrr does): translate() falls back to the global
+    // $mod_strings, and RepairAndClear::repairAndClearAllUnsafe() later
+    // compares against that same global to decide whether to repair every
+    // module or just a hand-picked list. Without this, both sides come up
+    // empty and repairDatabase() silently runs in single-module mode.
+    $GLOBALS['mod_strings'] = return_module_language('en_us', 'Administration');
+
+    $repair = new \RepairAndClear();
+    $repair->repairAndClearAll(['clearAll'], [translate('LBL_ALL_MODULES')], true, false);
+
+    // remove the js language files
+    \LanguageManager::removeJSLanguageFiles();
+    // remove language cache files
+    \LanguageManager::clearLanguageCache();
+
+    if ($rebuild_cache) {
+        rebuild_autoloader_cache();
+        \LanguageManager::removeJSLanguageFiles();
+        \LanguageManager::clearLanguageCache();
+        echo "Executing basic instance warm-up...\n";
+        warm_up();
+    }
+}
+
+function teardown_environment($context, $subject)
+{
     $exit_on_cleanup = true;
+
+    if ($context !== null && $subject !== null) {
+        $context->deactivateSubject($subject);
+    }
 
     sugar_cleanup(false);
 
     // some jobs have annoying habit of calling sugar_cleanup(), and it can be called only once
     // but job results can be written to DB after job is finished, so we have to disconnect here again
     // just in case we couldn't call cleanup
-    if(class_exists('DBManagerFactory')) {
-      $db = DBManagerFactory::getInstance();
-      $db->disconnect();
+    if (class_exists('DBManagerFactory')) {
+        $db = \DBManagerFactory::getInstance();
+        $db->disconnect();
     }
 
-    if($exit_on_cleanup) exit;    
+    if ($exit_on_cleanup) {
+        exit;
+    }
 }
 
-check_cli_options();
-change_to_sugar_directory($argv[1]);
-require_once('include/entryPoint.php');
-require_once('modules/Administration/QuickRepairAndRebuild.php');                    
-setup_environment();
-repair();
-teardown_environment();
+[$sugar_path, $rebuild_cache] = parse_cli_options();
+change_to_sugar_directory($sugar_path);
+require_once 'include/entryPoint.php';
+require_once 'modules/Administration/QuickRepairAndRebuild.php';
+[$security_context, $security_subject] = setup_environment();
+repair($rebuild_cache);
+teardown_environment($security_context, $security_subject);
